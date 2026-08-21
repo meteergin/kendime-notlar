@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  app:
+    build: ../01-professional-builder
+    volumes:
+      - app-logs:/var/log/app # Logları buraya yaz
+    command: [ "sh", "-c", "java -jar app.jar > /var/log/app/application.log 2>&1" ] # Basit log yönlendirme örneği
+    networks:
+      - elk-net
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.8.0
+    user: root # Docker socket veya dosya okuma izinleri için gerekebilir
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - app-logs:/var/log/app:ro # Aynı volume'ü sadece okuma modunda bağla
+    depends_on:
+      - elasticsearch
+    networks:
+      - elk-net
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false # Demo için güvenliği kapattık
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    networks:
+      - elk-net
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - elk-net
+
+volumes:
+  app-logs:
+
+
+networks:
+  elk-net:

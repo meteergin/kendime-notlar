@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # INFRASTRUCTURE
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - infra-net
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - infra-net
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - infra-net
+
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - monitor-net
+
+  # ---------------------------------------------------------------------------
+  # PLATFORM SERVICES
+  # ---------------------------------------------------------------------------
+  config-server:
+    image: my-config-server:latest # Placeholder
+    build: ../01-professional-builder # Template olarak builder kullanıyoruz
+    environment:
+      - SPRING_PROFILES_ACTIVE=native
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8888/actuator/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - infra-net
+      - service-net
+
+  discovery-server:
+    image: my-discovery-server:latest # Placeholder
+    build: ../01-professional-builder
+    ports:
+      - "8761:8761"
+    environment:
+      - EUREKA_CLIENT_REGISTER_WITH_EUREKA=false
+      - EUREKA_CLIENT_FETCH_REGISTRY=false
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8761/actuator/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      config-server:
+        condition: service_healthy
+    networks:
+      - service-net
+
+  api-gateway:
+    image: my-api-gateway:latest # Placeholder
+    build: ../01-professional-builder
+    ports:
+      - "8080:8080"
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka/
+      - SPRING_ZIPKIN_BASE_URL=http://zipkin:9411
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+    networks:
+      - service-net
+      - monitor-net
+
+  # ---------------------------------------------------------------------------
+  # BUSINESS SERVICES
+  # ---------------------------------------------------------------------------
+  product-service:
+    image: my-product-service:latest # Placeholder
+    build: ../01-professional-builder
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/product_db
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    networks:
+      - infra-net
+      - service-net
+
+  order-service:
+    image: my-order-service:latest # Placeholder
+    build: ../01-professional-builder
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/order_db
+      - SPRING_DATA_REDIS_HOST=redis
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    networks:
+      - infra-net
+      - service-net
+
+volumes:
+  postgres_data:
+
+
+networks:
+  infra-net: # Veritabanı ve Broker ağı
+  service-net: # Mikroservislerin kendi aralarındaki ağ
+  monitor-net: # İzleme araçları ağı

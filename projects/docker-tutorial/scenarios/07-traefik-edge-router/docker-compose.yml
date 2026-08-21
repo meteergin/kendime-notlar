@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=true" # Dashboard için (Prod'da kapatın)
+      - "--providers.docker=true" # Docker provider'ı aç
+      - "--providers.docker.exposedbydefault=false" # Sadece etiketlenenleri göster
+      - "--entrypoints.web.address=:80" # 80 portunu dinle
+    ports:
+      - "80:80"
+      - "8080:8080" # Dashboard portu
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Docker API erişimi
+    networks:
+      - traefik-net
+
+  whoami:
+    image: traefik/whoami # Basit bir test servisi
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami.rule=Host(`whoami.localhost`)" # Domain kuralı
+      - "traefik.http.routers.whoami.entrypoints=web"
+    networks:
+      - traefik-net
+
+networks:
+  traefik-net:
